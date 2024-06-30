@@ -15,8 +15,7 @@ max_date = date.today()
 user_states = {}
 transactions = {}
 
-@bot.message_handler(commands['viewexpense'])
-def view_expense(message):
+
     
     
 
@@ -101,15 +100,17 @@ def handle_amount_response(message):
 def post_expense_entry(message):
     """Posts expense entry to django."""
     chat_id = message.chat.id
-    print(f"sending {transactions[chat_id]}")
+    
     d = transactions[chat_id]
     r = requests.post(
         "http://143.198.218.34/ipon_goodbot/goodbot_postexpense/",
-        headers={"Authorization": f"Bearer {DJANGO_TOKEN}"},
+        headers={"Authorization":f"Bearer {DJANGO_TOKEN}"},
         json=d
     )
-    print(r.json())
-
+    response = r.json() # {"message":"success"}
+    if response['message'] == 'success':
+        bot.send_message(chat_id, "Expense posted")
+        bot.send_message(chat_id, "Total expenses for today: test number")
 
 # Helper functions
 def cal_start(message):
