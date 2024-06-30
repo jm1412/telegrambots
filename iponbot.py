@@ -8,7 +8,8 @@ from telegram_bot_calendar import DetailedTelegramCalendar, LSTEP
 
 BOT_TOKEN = os.environ.get('BOT_TOKEN')
 bot = telebot.TeleBot(BOT_TOKEN)
-secret_token = "5dd31bc89de7e6c829725b0d7f7a2c60afa618f42c98b5e27d413583955cc81d"
+DJANGO_TOKEN = os.environ.get('DJANGO_TOKEN')
+
 
 max_date = date.today()
 user_states = {}
@@ -16,6 +17,7 @@ transactions = {}
 
 @bot.message_handler(commands['viewexpense'])
 def view_expense(message):
+    
     
 
 @bot.message_handler(commands=['start', 'hello'])
@@ -103,7 +105,7 @@ def post_expense_entry(message):
     d = transactions[chat_id]
     r = requests.post(
         "http://143.198.218.34/ipon_goodbot/goodbot_postexpense/",
-        headers={"Authorization": f"Bearer {secret_token}"},
+        headers={"Authorization": f"Bearer {DJANGO_TOKEN}"},
         json=d
     )
     print(r.json())
