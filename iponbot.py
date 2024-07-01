@@ -15,9 +15,23 @@ max_date = date.today()
 user_states = {}
 transactions = {}
 
-
+@bot.message_handler(commands=['viewexpenses'])
+def view_expenses(message):
+    chat_id = message.chat.id
     
+    markup = types.ReplyKeyboardMarkup(row_width=1, one_time_keyboard=True)
+    itembtn1 = types.KeyboardButton('Today')
+    itembtn2 = types.KeyboardButton('Yesterday')
+    itembtn3 = types.KeyboardButton('This week')
+    itembtn4 = types.KeyboardButton('This month')
+    itembtn5 = types.KeyboardButton('Custom date range')
+    markup.add(itembtn1, itembtn2, itembtn3, itembtn4, itembtn5)
+    bot.send_message(chat_id, "For what day:", reply_markup=markup)
+    user_states[chat_id] = 'awaiting_date_view_expenses'
     
+@bot.message_handler(func=lambda message: user_states.get(message.chat.id) == 'awaiting_date_view_expenses')
+def handle_view_expenses_date(message):
+    continue
 
 @bot.message_handler(commands=['start', 'hello'])
 def send_welcome(message):
