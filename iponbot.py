@@ -17,6 +17,8 @@ transactions = {}
 
 @bot.message_handler(commands=['viewexpenses'])
 def view_expenses(message):
+    """Gets called when user initiates /viewexpenses"""
+    
     chat_id = message.chat.id
     
     markup = types.ReplyKeyboardMarkup(row_width=1, one_time_keyboard=True)
@@ -27,11 +29,40 @@ def view_expenses(message):
     itembtn5 = types.KeyboardButton('Custom date range')
     markup.add(itembtn1, itembtn2, itembtn3, itembtn4, itembtn5)
     bot.send_message(chat_id, "For what day:", reply_markup=markup)
-    user_states[chat_id] = 'awaiting_date_view_expenses'
-    
-@bot.message_handler(func=lambda message: user_states.get(message.chat.id) == 'awaiting_date_view_expenses')
+    user_states[chat_id] = 'awaiting_view_expenses_date'
+
+@bot.message_handler(func=lambda message: user_states.get(message.chat.id) == 'awaiting_view_expenses_date')
 def handle_view_expenses_date(message):
-    continue
+    """Accepts date, """
+    chat_id = message.chat.id
+    custom_date = max_date.strftime("%Y-%m-%d")
+    if message.text == 'Today':
+        transactions[chat_id]["date"] = custom_date
+        
+        bot.send_message(chat_id, "You selected 'Today'. Please enter the expense amount:", reply_markup=types.ReplyKeyboardRemove())
+        user_states[chat_id] = 'awaiting_amount'
+    
+    elif message.text == 'Custom date range':
+        handle_view_expenses_date_range(message)
+    else:
+        bot.send_message(chat_id, "Invalid option. Please choose 'Today' or 'Custom date'.")
+
+@bot.message_handler(func=lambda message: user_states.get(message.chat.id) == 'awaiting_view_expenses_date_range')
+def handle_view_expenses_date_range(message):
+    def handle_first_date(date):
+        from_date = date.strftime("%Y-%m-%d")
+        bot.send_message(message.chat.id, f"From date selected: {from_date}")
+        # Now ask for the 'to' date
+        cal_start(message, handle_second_date)
+
+    def handle_second_date(date):
+        to_date = date.strftime("%Y-%m-%d")
+        bot.send_message(message.chat.id, f"To date selected: {to_date}")
+        # Here you can handle both dates as needed
+
+    # Start by asking for the 'from' date
+    cal_start(message, handle_first_date)    
+
 
 @bot.message_handler(commands=['start', 'hello'])
 def send_welcome(message):
@@ -49,6 +80,7 @@ def send_help(message):
 
 @bot.message_handler(commands=['addexpense'])
 def initiate_add_expense(message):
+    """Gets called when user initiates /addexpense"""
     chat_id = message.chat.id
     
     transactions[chat_id] = {"telegram_id":chat_id}
@@ -72,13 +104,13 @@ def handle_date_response(message):
         user_states[chat_id] = 'awaiting_amount'
     
     elif message.text == 'Custom date':
-        custom_date = cal_start(message)
+        cal_start(message, lambda date: handle_custom_date_response(message, date))
         # bot.send_message(chat_id, "Please enter the date (YYYY-MM-DD):", reply_markup=types.ReplyKeyboardRemove())
-        # user_states[chat_id] = 'awaiting_custom_date'
     
     else:
         bot.send_message(chat_id, "Invalid option. Please choose 'Today' or 'Custom date'.")
-
+        
+#@bot.message_handler(func=lambda message: user_states.get(message.chat.id) == 'awaiting_custom_date')
 def handle_custom_date_response(message, date_obj):
     chat_id = message.chat.id
     custom_date = date_obj.strftime("%Y-%m-%d") # Convert datetime object to string for bot message confirmation.
@@ -127,13 +159,19 @@ def post_expense_entry(message):
         bot.send_message(chat_id, "Total expenses for today: test number")
 
 # Helper functions
-def cal_start(message):
+def cal_start(message, callback):
     """Starts the calendar picker."""
+    chat_id = message.chat.id
+    user_states[chat_id] = {
+        'state': 'awaiting_custom_date',
+        'callback': callback
+    }
     calendar, step = DetailedTelegramCalendar(max_date=max_date).build()
     bot.send_message(
-        message.chat.id,
+        chat_id,
         f"Select {LSTEP[step]}",
-        reply_markup=calendar)
+        reply_markup=calendar
+    )
 
 @bot.callback_query_handler(func=DetailedTelegramCalendar.func())
 def cal_callback_handler(callback_query):
@@ -146,15 +184,23 @@ def cal_callback_handler(callback_query):
             f"Select {LSTEP[step]}",
             chat_id,
             callback_query.message.message_id,
-            reply_markup=key)
-            
+            reply_markup=key
+        )
     elif result:
-        handle_custom_date_response(callback_query.message, result)
+        user_state = user_states.get(chat_id, {})
+        callback = user_state.get('callback')
+        if callback:
+            callback(result)
         custom_date = result.strftime("%Y-%m-%d")
         bot.edit_message_text(
             f"You selected: {custom_date}.",
             chat_id,
-            callback_query.message.message_id)
+            callback_query.message.message_id
+        )
+
+# Example of initiating the calendar picker with a callback
+def start_handler(message):
+    cal_start(message, lambda date: handle_custom_date_response(message, date))
 
 
 
