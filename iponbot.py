@@ -1,19 +1,27 @@
 import os
+import pytz
 import telebot
 import requests
 from telebot import types
 from datetime import datetime, date
 from telegram_bot_calendar import DetailedTelegramCalendar, LSTEP
 
-
 BOT_TOKEN = os.environ.get('BOT_TOKEN')
 bot = telebot.TeleBot(BOT_TOKEN)
 DJANGO_TOKEN = os.environ.get('DJANGO_TOKEN')
 
-
-max_date = date.today()
 user_states = {}
+user_timezones = {"1":"1"}
 transactions = {}
+
+timezones = [
+    'Etc/GMT+12', 'Pacific/Midway', 'Pacific/Honolulu', 'America/Anchorage', 'America/Los_Angeles',
+    'America/Denver', 'America/Chicago', 'America/New_York', 'America/Caracas', 'America/Halifax',
+    'America/Sao_Paulo', 'Atlantic/South_Georgia', 'Atlantic/Azores', 'Europe/London', 'Europe/Amsterdam',
+    'Europe/Athens', 'Europe/Moscow', 'Asia/Tehran', 'Asia/Dubai', 'Asia/Karachi',
+    'Asia/Kolkata', 'Asia/Dhaka', 'Asia/Jakarta', 'Asia/Shanghai', 'Asia/Tokyo',
+    'Australia/Adelaide', 'Australia/Sydney', 'Pacific/Noumea', 'Pacific/Auckland', 'Pacific/Tongatapu'
+]
 
 @bot.message_handler(commands=['viewexpenses'])
 def view_expenses(message):
@@ -31,10 +39,18 @@ def view_expenses(message):
     bot.send_message(chat_id, "For what day:", reply_markup=markup)
     user_states[chat_id] = 'awaiting_view_expenses_date'
 
+def user_date_today(message):
+    """Returns user date today adjusted for timezone."""
+    chat_id = message.chat.id
+    user_tz = pytz.timezone(user_timezones[str(chat_id)])
+    user_date_today = datetime.now(user_tz).date()
+    return user_date_today
+    
 @bot.message_handler(func=lambda message: user_states.get(message.chat.id) == 'awaiting_view_expenses_date')
 def handle_view_expenses_date(message):
     """Accepts date, """
     chat_id = message.chat.id
+    max_date = user_date_today(message)
     custom_date = max_date.strftime("%Y-%m-%d")
     if message.text == 'Today':
         transactions[chat_id]["date"] = custom_date
@@ -82,9 +98,15 @@ def send_help(message):
 def initiate_add_expense(message):
     """Gets called when user initiates /addexpense"""
     chat_id = message.chat.id
-    
     transactions[chat_id] = {"telegram_id":chat_id}
     
+    if user_has_timezone(message):
+        add_expense_show_calendar_picker(message)
+    else:
+        get_user_timezone(message)
+        
+def add_expense_show_calendar_picker(message):      
+    chat_id = message.chat.id
     markup = types.ReplyKeyboardMarkup(row_width=1, one_time_keyboard=True)
     itembtn1 = types.KeyboardButton('Today')
     itembtn2 = types.KeyboardButton('Custom date')
@@ -96,6 +118,7 @@ def initiate_add_expense(message):
 @bot.message_handler(func=lambda message: user_states.get(message.chat.id) == 'awaiting_date')
 def handle_date_response(message):
     chat_id = message.chat.id
+    max_date = user_date_today(message)
     custom_date = max_date.strftime("%Y-%m-%d")
     if message.text == 'Today':
         transactions[chat_id]["date"] = custom_date
@@ -144,19 +167,31 @@ def handle_amount_response(message):
     post_expense_entry(message)
 
 def post_expense_entry(message):
-    """Posts expense entry to django."""
+    """Saves expense entry to server."""
     chat_id = message.chat.id
     
+    #TODO: remove dictionary entry on successful posting
     d = transactions[chat_id]
+    d["timezone"] = user_timezones[str(chat_id)]
+
     r = requests.post(
         "http://143.198.218.34/ipon_goodbot/goodbot_postexpense/",
         headers={"Authorization":f"Bearer {DJANGO_TOKEN}"},
         json=d
     )
     response = r.json() # {"message":"success"}
+
     if response['message'] == 'success':
         bot.send_message(chat_id, "Expense posted")
-        bot.send_message(chat_id, "Total expenses for today: test number")
+        
+        r = request.post(
+            "http://143.198.218.34/ipon_goodbot/expense_amount_today",
+            headers={"Authorization":f"Bearer {DJANGO_TOKEN}"},
+            json={"telegram_id":chat_id}
+            )
+        response = r.json()
+
+        bot.send_message(chat_id, f"Total expenses for today: {response['expense_amount_today']}")
 
 # Helper functions
 def cal_start(message, callback):
@@ -198,10 +233,61 @@ def cal_callback_handler(callback_query):
             callback_query.message.message_id
         )
 
-# Example of initiating the calendar picker with a callback
-def start_handler(message):
-    cal_start(message, lambda date: handle_custom_date_response(message, date))
+# Work on user timezone
+def user_has_timezone(message):
+    global user_timezones
+    chat_id = message.chat.id
 
+    # check if user is already in user_timezones before trying to update it to minimize api calls.
+    if str(chat_id) in user_timezones:
+        return True
 
+    user_timezones = dict(get_saved_timezones(message))
+
+    if str(chat_id) in user_timezones:
+        return True
+    
+    return False
+
+def get_saved_timezones(message): # TODO: rewrite this to retry in the event that server is down.
+    """Gets saved timezones from server and saves it to user_timezones"""
+    r = requests.get(
+        "http://143.198.218.34/ipon_goodbot/get_saved_timezones/",
+        headers={"Authorization":f"Bearer {DJANGO_TOKEN}"}
+    )
+    response = r.json()
+    if len(response) == 0:
+        return {}
+        
+    return response[0]
+
+def get_user_timezone(message):
+    """Starts when a user gets asked to select timezone."""
+    chat_id = message.chat.id
+
+    timezone_keyboard = types.InlineKeyboardMarkup()
+    for tz in timezones:
+        timezone_keyboard.add(types.InlineKeyboardButton(tz, callback_data=tz))
+
+    bot.send_message(chat_id, "Please select your timezone:", reply_markup=timezone_keyboard)
+    bot.send_message(chat_id, "Before we can continue, we need to setup your timezone, please select your timezone above.")
+    user_states[chat_id] = 'awaiting_timezone'
+
+@bot.callback_query_handler(func=lambda call: call.data in timezones) # Waits for responses that = timezones list
+def handle_timezone_selection(call):
+    """Waits for timezone response then saves it to django."""
+    # global user_timezones
+    chat_id = call.message.chat.id
+    user_timezones[chat_id] = call.data
+    bot.edit_message_text(f"Timezone selected: {call.data}", chat_id, call.message.message_id)
+    
+    d = {'telegram_id':chat_id, 'timezone':call.data}
+    print(f"sending to server: {d}")
+    r = requests.post(
+        "http://143.198.218.34/ipon_goodbot/save_user_timezone/",
+        headers={"Authorization":f"Bearer {DJANGO_TOKEN}"},
+        json=d
+    )
+    
 
 bot.infinity_polling()
