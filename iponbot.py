@@ -182,13 +182,14 @@ def post_expense_entry(message):
     response = r.json() # {"message":"success"}
 
     if response['message'] == 'success':
+
         bot.send_message(chat_id, "Expense posted")
-        
-        r = request.post(
-            "http://143.198.218.34/ipon_goodbot/expense_amount_today",
+
+        r = requests.post(
+            "http://143.198.218.34/ipon_goodbot/get_expense_amount_today/",
             headers={"Authorization":f"Bearer {DJANGO_TOKEN}"},
             json={"telegram_id":chat_id}
-            )
+            ) #TODO, turn this into a GET instead of a POST
         response = r.json()
 
         bot.send_message(chat_id, f"Total expenses for today: {response['expense_amount_today']}")
