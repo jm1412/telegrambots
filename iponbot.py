@@ -6,6 +6,8 @@ from telebot import types
 from datetime import datetime, date
 from telegram_bot_calendar import DetailedTelegramCalendar, LSTEP
 
+#TODO: add currency
+
 BOT_TOKEN = os.environ.get('BOT_TOKEN')
 bot = telebot.TeleBot(BOT_TOKEN)
 DJANGO_TOKEN = os.environ.get('DJANGO_TOKEN')
@@ -22,6 +24,60 @@ timezones = [
     'Asia/Kolkata', 'Asia/Dhaka', 'Asia/Jakarta', 'Asia/Shanghai', 'Asia/Tokyo',
     'Australia/Adelaide', 'Australia/Sydney', 'Pacific/Noumea', 'Pacific/Auckland', 'Pacific/Tongatapu'
 ]
+
+categories = {
+    "Housing": ["Rent", "Mortagage", "Utilities", "Council Tax"],
+    "Transportation": ["Public Transport", "Gas"],
+    "Food and Groceries": ["Groceries", "Dining Out", "Snacks and Beverages", "Meal Delivery Services"],
+    "Health and Fitness": ["Gym Membership", "Sports", "Medical", "Health Insurance"],
+    "Personal Care": ["Haircut", "Toiletries", "Cosmetic and Skincare"],
+    "Entertainment and Leisure": ["Hobbies and Activities", "Concerts", "Streaming Subscription"],
+    "Shopping": [],
+    "Savings and Investments": [],
+    "Debt Payments": [],
+    "Miscellaneous": []
+}
+
+# CATEGORY HANDLER
+def send_expense_categories(chat_id):
+    markup = types.ReplyKeyboardMarkup(row_width=2, one_time_keyboard=True)
+    buttons = [types.KeyboardButton(category) for category in categories.keys()]
+    markup.add(*buttons)
+    bot.send_message(chat_id, "Select an expense category:", reply_markup=markup)
+    
+@bot.message_handler(func=lambda message: user_states.get(message.chat.id) == 'awaiting_main_category')
+def handle_main_category_response(message):
+    chat_id = message.chat.id
+    selected_category = message.text
+    
+    if selected_category in categories:
+        if categories[selected_category]:
+            # If there are subcategories, send them
+            send_subcategories(chat_id, selected_category)
+            user_states[chat_id] = 'awaiting_sub_category'
+        else:
+            # If no subcategories, proceed to next step (e.g., asking for expense amount)
+            bot.send_message(chat_id, f"You selected {selected_category}. Please enter the expense amount:", reply_markup=types.ReplyKeyboardRemove())
+            user_states[chat_id] = 'awaiting_amount'
+    else:
+        bot.send_message(chat_id, "Invalid category. Please select a valid expense category.")
+
+def send_subcategories(chat_id, main_category):
+    markup = types.ReplyKeyboardMarkup(row_width=2, one_time_keyboard=True)
+    buttons = [types.KeyboardButton(sub) for sub in categories[main_category]]
+    markup.add(*buttons)
+    bot.send_message(chat_id, f"Select a subcategory for {main_category}:", reply_markup=markup)
+
+@bot.message_handler(func=lambda message: user_states.get(message.chat.id) == 'awaiting_sub_category')
+def handle_sub_category_response(message):
+    chat_id = message.chat.id
+    selected_subcategory = message.text
+    
+    # Assuming we want to capture the subcategory selection
+    transactions[chat_id]['subcategory'] = selected_subcategory
+    
+    bot.send_message(chat_id, f"You selected {selected_subcategory}. Please enter the expense amount:", reply_markup=types.ReplyKeyboardRemove())
+    user_states[chat_id] = 'awaiting_amount'
 
 @bot.message_handler(commands=['viewexpenses'])
 def view_expenses(message):
@@ -164,6 +220,18 @@ def handle_amount_response(message):
         bot.send_message(chat_id, "Invalid amount. Please enter a valid number.")
 
     transactions[chat_id]["amount"] = amount
+    
+    send_expense_categories(chat_id)
+    user_states[chat_id] = 'awaiting_main_category'
+
+@bot.message_handler(func=lambda message: user_states.get(message.chat.id) == 'awaiting_note_for_expense')
+def handle_note_for_expense_response(message):
+    """
+    Waits for user to provide comment for the expense, and posts first 100 characters.
+    """
+    chat_id = message.chat.id
+    expense_note = message.text
+    transactions[chat_id]["expense_note"] = expense_note[:100]
     post_expense_entry(message)
 
 def post_expense_entry(message):
@@ -172,7 +240,8 @@ def post_expense_entry(message):
     
     #TODO: remove dictionary entry on successful posting
     d = transactions[chat_id]
-    d["timezone"] = user_timezones[str(chat_id)]
+    user_timezone = user_timezones[str(chat_id)]
+    d["timezone"] = user_timezone
 
     r = requests.post(
         "http://143.198.218.34/ipon_goodbot/goodbot_postexpense/",
@@ -188,11 +257,11 @@ def post_expense_entry(message):
         r = requests.post(
             "http://143.198.218.34/ipon_goodbot/get_expense_amount_today/",
             headers={"Authorization":f"Bearer {DJANGO_TOKEN}"},
-            json={"telegram_id":chat_id}
+            json={"telegram_id":chat_id, "timezone":user_timezone}
             ) #TODO, turn this into a GET instead of a POST
         response = r.json()
 
-        bot.send_message(chat_id, f"Total expenses for today: {response['expense_amount_today']}")
+        bot.send_message(chat_id, f"Total expenses for today: {response['total']}")
 
 # Helper functions
 def cal_start(message, callback):
@@ -202,6 +271,7 @@ def cal_start(message, callback):
         'state': 'awaiting_custom_date',
         'callback': callback
     }
+    max_date = user_date_today(message)
     calendar, step = DetailedTelegramCalendar(max_date=max_date).build()
     bot.send_message(
         chat_id,
@@ -212,6 +282,7 @@ def cal_start(message, callback):
 @bot.callback_query_handler(func=DetailedTelegramCalendar.func())
 def cal_callback_handler(callback_query):
     """Handles calendar picker button."""
+    max_date = user_date_today(callback_query.message)
     result, key, step = DetailedTelegramCalendar(max_date=max_date).process(callback_query.data)
     chat_id = callback_query.message.chat.id
     
