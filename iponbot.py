@@ -57,8 +57,8 @@ def handle_main_category_response(message):
             user_states[chat_id] = 'awaiting_sub_category'
         else:
             # If no subcategories, proceed to next step (e.g., asking for expense amount)
-            bot.send_message(chat_id, f"You selected {selected_category}. Please enter the expense amount:", reply_markup=types.ReplyKeyboardRemove())
-            user_states[chat_id] = 'awaiting_amount'
+            bot.send_message(chat_id, f"What was the expense for:", reply_markup=types.ReplyKeyboardRemove())
+            user_states[chat_id] = 'awaiting_note_for_expense'
     else:
         bot.send_message(chat_id, "Invalid category. Please select a valid expense category.")
 
@@ -76,8 +76,8 @@ def handle_sub_category_response(message):
     # Assuming we want to capture the subcategory selection
     transactions[chat_id]['subcategory'] = selected_subcategory
     
-    bot.send_message(chat_id, f"You selected {selected_subcategory}. Please enter the expense amount:", reply_markup=types.ReplyKeyboardRemove())
-    user_states[chat_id] = 'awaiting_amount'
+    bot.send_message(chat_id, f"What was the expense for:", reply_markup=types.ReplyKeyboardRemove())
+    user_states[chat_id] = 'awaiting_note_for_expense'
 
 @bot.message_handler(commands=['viewexpenses'])
 def view_expenses(message):
