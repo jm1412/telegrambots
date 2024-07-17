@@ -1,9 +1,6 @@
 import requests
 import os
-DJANGO_TOKEN = os.environ.get('DJANGO_TOKEN')
-from globals import user_states, user_timezones, transactions, timezones, categories
-from iponbot import bot
-
+from globals import user_states, user_timezones, transactions, timezones, categories, bot, DJANGO_TOKEN
 
         
 def add_expense_show_calendar_picker(message):      

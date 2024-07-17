@@ -1,3 +1,10 @@
+import os
+import telebot
+
+BOT_TOKEN = os.environ.get('BOT_TOKEN')
+bot = telebot.TeleBot(BOT_TOKEN)
+DJANGO_TOKEN = os.environ.get('DJANGO_TOKEN')
+
 user_states = {} # used to keep track of where the user currently is to filter which functions should listen for them
 user_timezones = {"1":"1"}
 transactions = {} # used to keep track of what the user is about to upload
