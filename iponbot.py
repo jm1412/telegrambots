@@ -10,7 +10,8 @@ BOT_TOKEN = os.environ.get('BOT_TOKEN')
 bot = telebot.TeleBot(BOT_TOKEN)
 DJANGO_TOKEN = os.environ.get('DJANGO_TOKEN')
 
-from globals import *
+from globals import user_states, user_timezones, transactions, timezones, categories
+from timezonehandler import user_has_timezone
 
 # COMMANDS
 # Commands should be added at the top to ensure that all / commands get called irregardless of status
@@ -128,7 +129,7 @@ def handle_custom_date_response(message, date_obj):
         wait_for_add_expense_date(message)
 
 def user_date_today(message):
-    global user_timezones
+    print(f"global: {user_timezones}")
     """Returns user date today adjusted for timezone."""
     chat_id = message.chat.id
     user_tz = pytz.timezone(user_timezones[str(chat_id)])
@@ -273,19 +274,7 @@ def handle_settings_response(message):
     if user_response == "Change Timezone":
         get_user_timezone(message)
 
-def user_has_timezone(message):
-    global user_timezones
-    chat_id = message.chat.id
 
-    # check if user is already in user_timezones before trying to update it to minimize api calls.
-    if str(chat_id) in user_timezones:
-        return True
-    
-    user_timezones = dict(get_saved_timezones(message))
-    if str(chat_id) in user_timezones:
-        return True
-    
-    return False
 
 def get_saved_timezones(message): # TODO: rewrite this to retry in the event that server is down.
     """Gets saved timezones from server and saves it to user_timezones"""
