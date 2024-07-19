@@ -7,7 +7,6 @@ from telebot import types
 
 from globals import user_states, user_timezones, transactions, timezones, categories, bot
 
-
 def user_has_timezone(message):
     chat_id = message.chat.id
 

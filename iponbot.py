@@ -6,9 +6,6 @@ from telebot import types
 from datetime import datetime, date
 from telegram_bot_calendar import DetailedTelegramCalendar, LSTEP
 
-
-
-
 from globals import user_states, user_timezones, transactions, timezones, categories, bot, DJANGO_TOKEN
 from timezonehandler import user_has_timezone, get_saved_timezones, get_user_timezone, handle_timezone_selection
 
