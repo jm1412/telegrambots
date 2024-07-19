@@ -5,7 +5,7 @@ DJANGO_TOKEN = os.environ.get('DJANGO_TOKEN')
 import telebot
 from telebot import types
 
-from globals import user_states, user_timezones, transactions, timezones, categories, bot
+from globals import user_states, user_timezones, transactions, timezones, categories, bot, server
 
 def user_has_timezone(message):
     chat_id = message.chat.id
@@ -15,7 +15,6 @@ def user_has_timezone(message):
         return True
     
     user_timezones.update(dict(get_saved_timezones(message)))
-    #user_timezones.update(dict(get_saved_timezones(message)))
     if str(chat_id) in user_timezones:
         return True
     
@@ -24,7 +23,7 @@ def user_has_timezone(message):
 def get_saved_timezones(message): # TODO: rewrite this to retry in the event that server is down.
     """Gets saved timezones from server and saves it to user_timezones"""
     r = requests.get(
-        "http://143.198.218.34/ipon_goodbot/get_saved_timezones/",
+        f"{server}/ipon_goodbot/get_saved_timezones/",
         headers={"Authorization":f"Bearer {DJANGO_TOKEN}"}
     )
     response = r.json()
@@ -58,7 +57,7 @@ def handle_timezone_selection(message):
         
         d = {'telegram_id': chat_id, 'timezone': message.text}
         r = requests.post(
-            "http://143.198.218.34/ipon_goodbot/save_user_timezone/",
+            f"{server}/ipon_goodbot/save_user_timezone/",
             headers={"Authorization": f"Bearer {DJANGO_TOKEN}"},
             json=d
         )

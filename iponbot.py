@@ -6,8 +6,7 @@ from telebot import types
 from datetime import datetime, date
 from telegram_bot_calendar import DetailedTelegramCalendar, LSTEP
 
-from globals import user_states, user_timezones, transactions, timezones, categories, bot, DJANGO_TOKEN
-from timezonehandler import user_has_timezone, get_saved_timezones, get_user_timezone, handle_timezone_selection
+from globals import user_states, user_timezones, transactions, timezones, categories, bot, DJANGO_TOKEN, server
 
 # COMMANDS
 # Commands should be added at the top to ensure that all / commands get called irregardless of status
@@ -56,27 +55,21 @@ def initiate_add_expense(message):
     else:
         get_user_timezone(message)
 
+@bot.message_handler(commands=['viewexpenses'])
+def initiate_view_expenses(message):
+    """Gets called when user initiates /viewexpenses"""
+    chat_id = message.chat.id
+    user_states.pop(chat_id, None)
+
+    if user_has_timezone(message):
+        show_view_expenses_date_options(message)
+    else:
+        get_user_timezone(message)
+
 def reset_user_state(message):
     chat_id = message.chat.id
     user_states.pop(chat_id, None)
 
-def show_view_expenses_date_options(message):
-    chat_id = message.chat.id
-    markup = types.ReplyKeyboardMarkup(row_width=1, one_time_keyboard=True)
-    itembtn1 = types.KeyboardButton('Today')
-    itembtn2 = types.KeyboardButton('Yesterday')
-    itembtn3 = types.KeyboardButton('This week')
-    itembtn4 = types.KeyboardButton('This month')
-    itembtn5 = types.KeyboardButton('Custom date range')
-    markup.add(itembtn1, itembtn2, itembtn3, itembtn4, itembtn5)
-    bot.send_message(chat_id, "For what day:", reply_markup=markup)
-    user_states[chat_id] = 'awaiting_view_expenses_date'
-    
-@bot.message_handler(commands=['viewexpenses'])
-def initiate_view_expenses(message):
-    """Gets called when user initiates /viewexpenses"""
-    reset_user_state(message)
-    show_view_expenses_date_options(message)
     
 def add_expense_show_calendar_picker(message):      
     chat_id = message.chat.id
@@ -102,60 +95,13 @@ def wait_for_add_expense_date(message):
         ask_user_for_expense_amount(message)
     
     elif message.text == 'Custom date':
-        initiate_calendar_picker(message, lambda date: handle_custom_date_response(message, date))
+        initiate_calendar_picker(message, lambda date: handle_custom_date_response(message, date, user_state = 'awaiting_expense_amount'))
         # bot.send_message(chat_id, "Please enter the date (YYYY-MM-DD):", reply_markup=types.ReplyKeyboardRemove())
     
     else:
         bot.send_message(chat_id, "Invalid option. Please choose 'Today' or 'Custom date'.")
         
-#@bot.message_handler(func=lambda message: user_states.get(message.chat.id) == 'awaiting_custom_date')
-def handle_custom_date_response(message, date_obj):
-    chat_id = message.chat.id
-    custom_date = date_obj.strftime("%Y-%m-%d") # Convert datetime object to string for bot message confirmation.
-    try:
-        # Validate date format and check if it's a past or current date
-        if date_obj > datetime.now().date():
-            raise ValueError("Date cannot be in the future.")
-            
-        transactions[chat_id]["date"] = custom_date
-        ask_user_for_expense_amount(message)
-    
-    except ValueError:# Not needed since date picker is limited by date.today, but added just in case
-        bot.send_message(chat_id, "Invalid date. Please enter a valid date in YYYY-MM-DD format that is not in the future.")
-        wait_for_add_expense_date(message)
 
-def user_date_today(message):
-    """Returns user date today adjusted for timezone."""
-    chat_id = message.chat.id
-    user_tz = pytz.timezone(user_timezones[str(chat_id)])
-    user_date_today = datetime.now(user_tz).date()
-    return user_date_today
-
-@bot.callback_query_handler(func=DetailedTelegramCalendar.func())
-def cal_callback_handler(callback_query):
-    """Handles calendar picker button."""
-    max_date = user_date_today(callback_query.message)
-    result, key, step = DetailedTelegramCalendar(max_date=max_date).process(callback_query.data)
-    chat_id = callback_query.message.chat.id
-    
-    if not result and key:
-        bot.edit_message_text(
-            f"Select {LSTEP[step]}",
-            chat_id,
-            callback_query.message.message_id,
-            reply_markup=key
-        )
-    elif result:
-        user_state = user_states.get(chat_id, {})
-        callback = user_state.get('callback')
-        if callback:
-            callback(result)
-        custom_date = result.strftime("%Y-%m-%d")
-        bot.edit_message_text(
-            f"You selected: {custom_date}.",
-            chat_id,
-            callback_query.message.message_id
-        )
 
 @bot.message_handler(func=lambda message: user_states.get(message.chat.id) == 'awaiting_expense_amount')
 def handle_amount_response(message):
@@ -242,7 +188,7 @@ def post_expense_entry(message):
     d["timezone"] = user_timezone
 
     r = requests.post(
-        "http://143.198.218.34/ipon_goodbot/goodbot_postexpense/",
+        f"{server}/ipon_goodbot/goodbot_postexpense/",
         headers={"Authorization":f"Bearer {DJANGO_TOKEN}"},
         json=d
     )
@@ -253,7 +199,7 @@ def post_expense_entry(message):
         bot.send_message(chat_id, "Expense posted")
 
         r = requests.post(
-            "http://143.198.218.34/ipon_goodbot/get_expense_amount_today/",
+            f"{server}/ipon_goodbot/get_expense_amount_today/",
             headers={"Authorization":f"Bearer {DJANGO_TOKEN}"},
             json={"telegram_id":chat_id, "timezone":user_timezone}
             ) #TODO, turn this into a GET instead of a POST
@@ -268,55 +214,11 @@ def handle_settings_response(message):
     
     if user_response == "Change Timezone":
         get_user_timezone(message)
-        
-@bot.message_handler(func=lambda message: user_states.get(message.chat.id) == 'awaiting_view_expenses_date')
-def handle_view_expenses_date(message):
-    """Accepts date, """
-    chat_id = message.chat.id
-    max_date = user_date_today(message)
-    custom_date = max_date.strftime("%Y-%m-%d")
-    if message.text == 'Today':
-        transactions[chat_id]["date"] = custom_date
-        
-        bot.send_message(chat_id, "You selected 'Today'. Please enter the expense amount:", reply_markup=types.ReplyKeyboardRemove())
-        user_states[chat_id] = 'awaiting_expense_amount'
-    
-    elif message.text == 'Custom date range':
-        handle_view_expenses_date_range(message)
-    else:
-        bot.send_message(chat_id, "Invalid option. Please choose 'Today' or 'Custom date'.")
-
-@bot.message_handler(func=lambda message: user_states.get(message.chat.id) == 'awaiting_view_expenses_date_range')
-def handle_view_expenses_date_range(message):
-    def handle_first_date(date):
-        from_date = date.strftime("%Y-%m-%d")
-        bot.send_message(message.chat.id, f"From date selected: {from_date}")
-        # Now ask for the 'to' date
-        initiate_calendar_picker(message, handle_second_date)
-
-    def handle_second_date(date):
-        to_date = date.strftime("%Y-%m-%d")
-        bot.send_message(message.chat.id, f"To date selected: {to_date}")
-        # Here you can handle both dates as needed
-
-    # Start by asking for the 'from' date
-    initiate_calendar_picker(message, handle_first_date)
-    
-def initiate_calendar_picker(message, callback):
-    """Starts the calendar picker."""
-    chat_id = message.chat.id
-    user_states[chat_id] = {
-        'state': 'awaiting_custom_date',
-        'callback': callback
-    }
-    max_date = user_date_today(message)
-    calendar, step = DetailedTelegramCalendar(max_date=max_date).build()
-    bot.send_message(
-        chat_id,
-        f"Select {LSTEP[step]}",
-        reply_markup=calendar
-    )
 
 
+# late import to ensure my /commands take priority in event listening
+from timezonehandler import user_has_timezone, get_saved_timezones, get_user_timezone, handle_timezone_selection
+from calendarpicker import initiate_calendar_picker, user_date_today, handle_custom_date_response
+from viewexpenses import show_view_expenses_date_options
 
 bot.infinity_polling()
