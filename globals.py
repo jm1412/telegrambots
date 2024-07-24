@@ -3,7 +3,7 @@ import telebot
 
 prod_server = "http://143.198.218.34"
 test_server = "http://localhost:8000"
-server = test_server
+server = prod_server
 
 BOT_TOKEN = os.environ.get('BOT_TOKEN')
 bot = telebot.TeleBot(BOT_TOKEN)
@@ -11,7 +11,7 @@ DJANGO_TOKEN = os.environ.get('DJANGO_TOKEN')
 
 user_states = {} # used to keep track of where the user currently is to filter which functions should listen for them
 user_timezones = {}
-transactions = {} # used to keep track of what the user is about to upload
+transactions = {} # used to keep track of what the user is about to upload/download
 
 # Common timezones
 timezones = [
