@@ -1,6 +1,7 @@
 import os
 import telebot
 
+# server switcher
 prod_server = "http://143.198.218.34"
 test_server = "http://localhost:8000"
 server = prod_server
